@@ -5,6 +5,8 @@ The goal is not just to "make it work", but to understand the lifecycle, concurr
 
 The implementation follows best practices used with Gorilla WebSocket.
 
+https://programmingpercy.tech/blog/mastering-websockets-with-go/
+
 ## 1. Core Mental Model
 
 A WebSocket connection is:
@@ -210,6 +212,70 @@ So the server must still perform a graceful shutdown.
 - Close frames are best-effort, not guaranteed
 - Cleanup must be safe and idempotent
 
-## 15. Final One-Sentence Summary
+## 15. Event System
 
-A WebSocket connection lives forever until a read or write fails; at that point, whichever side notices first performs cleanup, notifies the peer if possible, and removes the connection from the manager.
+The project is now moving from "raw websocket bytes" to a simple event protocol.
+Instead of treating every message as plain text, each message is wrapped in an `Event`:
+
+```go
+type Event struct {
+    Type    Type            `json:"type"`
+    Payload json.RawMessage `json:"payload"`
+}
+```
+
+### Why this helps
+
+- `type` tells the server what kind of action this is
+- `payload` carries the data for that action
+- Different event types can have different payload shapes
+
+This makes the websocket layer feel more like an API with named actions.
+
+### Event handler function type
+
+Handlers are functions with this shape:
+
+```go
+type EventHandler func(event Event, c *Client) error
+```
+
+Meaning:
+- Receive the event
+- Receive the client that sent it
+- Return an error if handling fails
+
+### Registering handlers
+
+The manager keeps a map of handlers keyed by event type:
+
+```go
+handlers map[Type]EventHandler
+```
+
+Then event-specific logic can be attached, for example:
+- `join_room`
+- `leave_room`
+- `send_message`
+
+Current code already defines `send_message` and its payload:
+
+```go
+type SendMessageEvent struct {
+    Message string `json:"message"`
+    From    string `json:"from"`
+}
+```
+
+### Mental model
+
+Think of it like this:
+1. Client sends `{type, payload}`
+2. Server reads `type`
+3. Server finds the matching handler
+4. Handler unmarshals payload into the correct struct
+5. Handler runs business logic
+
+## 16. Final One-Sentence Summary
+
+A WebSocket connection stays alive until a read/write fails; then the first side that detects it cleans up safely, and messages are handled through typed events (`type` + `payload`) routed to the correct handler.
