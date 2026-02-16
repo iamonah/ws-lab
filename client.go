@@ -3,8 +3,14 @@ package main
 import (
 	"encoding/json"
 	"log"
+	"time"
 
 	"github.com/gorilla/websocket"
+)
+
+var (
+	pongWait      = 10 * time.Second
+	pinggInterval = (9 * pongWait) / 10
 )
 
 type ClientList map[*Client]bool
@@ -32,6 +38,18 @@ func (c *Client) ReadMessages() {
 		c.manager.removeClient(c)
 	}()
 
+	if err := c.connection.SetReadDeadline(time.Now().Add(pongWait)); err != nil {
+		log.Printf("error setting read deadline: %v", err)
+		return
+	}
+
+	c.connection.SetReadLimit(512) //hard limit on message size to prevent abuse
+
+	c.connection.SetPongHandler(func(string) error {
+		c.connection.SetReadDeadline(time.Now().Add(pongWait)) //reseting the timer
+		return nil
+	})
+
 	for {
 		_, payload, err := c.connection.ReadMessage()
 		if err != nil {
@@ -58,6 +76,12 @@ func (c *Client) ReadMessages() {
 }
 
 func (c *Client) WriteMessages() {
+	ticker := time.NewTicker(pinggInterval)
+	defer func() {
+		// c.manager.removeClient(c)
+		ticker.Stop()
+	}()
+
 	for {
 		select {
 		case msg, ok := <-c.egress:
@@ -79,6 +103,13 @@ func (c *Client) WriteMessages() {
 				c.manager.removeClient(c)
 				return
 			}
+		case <-ticker.C:
+			// Send a ping message to check if connection alive
+			if err := c.connection.WriteMessage(websocket.PingMessage, nil); err != nil {
+				log.Printf("error sending ping: %v", err)
+				return
+			}
+
 		}
 	}
 }
