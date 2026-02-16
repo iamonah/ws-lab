@@ -49,6 +49,15 @@ func (m *Manager) routeEventHandler(event Event, c *Client) error {
 func (m *Manager) serverWebsocket(w http.ResponseWriter, r *http.Request) {
 	log.Println("new connection")
 
+	otp := r.URL.Query().Get("otp")
+	claims, err := validateOTP(otp)
+	if err != nil {
+		log.Printf("invalid otp: %v", err)
+		http.Error(w, "invalid otp", http.StatusUnauthorized)
+		return
+	}
+	log.Printf("authenticated websocket subject=%s", claims.Subject)
+
 	conn, err := websocketUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("websocket upgrade failed: %v", err)

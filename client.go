@@ -15,7 +15,7 @@ var (
 
 type ClientList map[*Client]bool
 
-type Client struct { 
+type Client struct {
 	connection *websocket.Conn
 	manager    *Manager
 
@@ -56,7 +56,6 @@ func (c *Client) ReadMessages() {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 				log.Printf("error reading message: %v", err)
 			}
-			print("hello")
 			return
 
 		}
