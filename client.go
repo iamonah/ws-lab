@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"encoding/json"
 	"log"
 
 	"github.com/gorilla/websocket"
@@ -9,18 +9,18 @@ import (
 
 type ClientList map[*Client]bool
 
-type Client struct {
+type Client struct { 
 	connection *websocket.Conn
 	manager    *Manager
 
 	// egress is used to avoid concurrent writes on the websocket connection
-	egress chan []byte
+	egress chan Event
 }
 
 func NewClient(conn *websocket.Conn, manager *Manager) *Client {
 	return &Client{
 		connection: conn,
-		egress:     make(chan []byte, 256),
+		egress:     make(chan Event),
 		manager:    manager,
 	}
 }
@@ -28,38 +28,39 @@ func NewClient(conn *websocket.Conn, manager *Manager) *Client {
 func (c *Client) ReadMessages() {
 	// cleanup connection
 	defer func() {
+		close(c.egress)
 		c.manager.removeClient(c)
 	}()
 
 	for {
-		messageType, payload, err := c.connection.ReadMessage()
+		_, payload, err := c.connection.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 				log.Printf("error reading message: %v", err)
 			}
-			break
+			print("hello")
+			return
 
 		}
 
-		for wsclient := range c.manager.clients {
-			fmt.Println("hihihihhihihihi")
-			wsclient.egress <- payload
+		var request Event
+		if err := json.Unmarshal(payload, &request); err != nil {
+			log.Printf("error unmarshaling event: %v", err)
+			return
 		}
 
-		log.Printf("received message type: %d", messageType)
-		log.Printf("received message: %s", string(payload))
+		if err := c.manager.routeEventHandler(request, c); err != nil {
+			log.Printf("error routing event: %v", err)
+			return
+		}
 	}
+
 }
 
 func (c *Client) WriteMessages() {
-	defer func() {
-		c.manager.removeClient(c)
-	}()
-
 	for {
 		select {
 		case msg, ok := <-c.egress:
-			fmt.Printf("writing message: %s\n", string(msg))	
 			if !ok {
 				// Channel closed meaning the client has disconnected
 				if err := c.connection.WriteMessage(websocket.CloseMessage, nil); err != nil {
@@ -67,7 +68,13 @@ func (c *Client) WriteMessages() {
 				}
 				return
 			}
-			if err := c.connection.WriteMessage(websocket.TextMessage, msg); err != nil {
+			bytes, err := json.Marshal(msg)
+			if err != nil {
+				log.Printf("error marshaling message: %v", err)
+				return
+			}
+			// Write the message to the websocket connection
+			if err := c.connection.WriteMessage(websocket.TextMessage, bytes); err != nil {
 				log.Printf("error writing message: %v", err)
 				c.manager.removeClient(c)
 				return

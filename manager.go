@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"sync"
@@ -33,6 +34,18 @@ func NewManager() *Manager {
 
 func (m *Manager) RegisterEventHandler(eventType Type, handler EventHandler) {
 	m.handers[eventType] = handler
+}
+
+func (m *Manager) routeEventHandler(event Event, c *Client) error {
+	if handler, ok := m.handers[event.Type]; ok {
+		if err := handler(event, c); err != nil {
+			log.Printf("error handling event: %v", err)
+			return err
+		}
+		return nil
+	} else {
+		return fmt.Errorf("no handler for event type: %s", event.Type)
+	}
 }
 
 func (m *Manager) serverWebsocket(w http.ResponseWriter, r *http.Request) {
