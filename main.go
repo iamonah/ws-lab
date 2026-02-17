@@ -17,7 +17,7 @@ func setupApi() {
 	http.Handle("GET /", http.FileServer(http.Dir("./frontend")))
 	http.HandleFunc("GET /otp", getOTP)
 	http.HandleFunc("GET /ws", manager.serverWebsocket)
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Fatal(http.ListenAndServeTLS(":8080", "cert.crt", "cert.key", nil))
 }
 
 func getOTP(w http.ResponseWriter, r *http.Request) {

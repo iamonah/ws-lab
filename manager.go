@@ -93,7 +93,7 @@ func checkOrigin(r *http.Request) bool {
 	switch origin {
 	case "": //dev mode
 		return true
-	case "http://localhost:8080":
+	case "https://localhost:8080":
 		return true
 	default:
 		return false
